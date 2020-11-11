@@ -41,6 +41,7 @@ export default {
   },
   methods: {
     outputImage (e) {
+      console.log(e)
       this.outImageUrl = e
     },
     drawAllTiles () {
@@ -49,8 +50,8 @@ export default {
     eraseAllTiles () {
       this.$refs.mosaic.eraseAllTiles()
     },
-    submitCanvas () {
-      this.$refs.mosaic.submitCanvas()
+    submitCanvas (type) {
+      this.$refs.mosaic.submitCanvas("image/jpeg", 0.5)
     },
     addMosaic () {
       this.tileData.tileWidth++;

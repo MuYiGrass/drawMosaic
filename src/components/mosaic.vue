@@ -1,9 +1,9 @@
 <template>
   <div class="drawMosaic">
     <!-- 画布 -->
-    <div class="canvas-container">
+    <div class="canvas-container-mosaic">
       <!-- 刷子 -->
-      <div class="brush"
+      <div class="mosaic-brush"
            :style="brushStyle"
            v-show="showBrush">
       </div>
@@ -30,7 +30,6 @@ export default {
     },
     minWidth: Number,
     maxWidth: Number,
-    timer: null,
   },
   components: {},
   data () {
@@ -44,7 +43,8 @@ export default {
       initImageData: [],    // 图片原始数据
       mouseData: null,      // 鼠标信息（位置）
       brushStyle: {},
-      showBrush: true
+      showBrush: false,
+      timer: null,
     }
   },
   mounted () {
@@ -55,29 +55,25 @@ export default {
     //初始化图片
     initImage (url) {
       let img = new Image();
-      img.src = url
-      img.crossOrigin = "anonymous"
+      img.src = url;
+      img.crossOrigin = "anonymous";
       img.onload = (e) => {
         e.target.style.maxWidth = `${this.maxWidth}px`
         e.target.style.minWidth = `${this.minWidth}px`
         this.initCanvas(e.target)
-      }
+      };
     },
     //初始化canvas
     initCanvas (img) {
-      const canvas = document.createElement('canvas')
-      canvas.classList.add("canvas-mosaic")
-      this.camvas = canvas
-      const ctx = canvas.getContext('2d')
-      this.context = ctx
-      document.querySelector('.canvas-container').appendChild(canvas)
-      let imgSize = this.setImageSize(img)
-      canvas.width = imgSize.width
-      canvas.height = imgSize.height
-      this.canvas = canvas
-      ctx.drawImage(img, 0, 0, imgSize.width, imgSize.height)
-      this.initImageData = ctx.getImageData(0, 0, imgSize.width, imgSize.height).data
-      this.initMosaic(ctx)
+      this.canvas = document.createElement('canvas');
+      this.canvas.classList.add("canvas-mosaic");
+      this.context = this.canvas.getContext('2d');
+      this.canvas.width = this.setImageSize(img).width;
+      this.canvas.height = this.setImageSize(img).height;
+      this.context.drawImage(img, 0, 0, this.canvas.width, this.canvas.height);
+      this.initImageData = this.context.getImageData(0, 0, this.canvas.width, this.canvas.height).data;
+      document.querySelector('.canvas-container-mosaic').appendChild(this.canvas);
+      this.initMosaic(this.context);
     },
     //设置图片最大宽，高度
     setImageSize (img) {
@@ -93,91 +89,100 @@ export default {
         temImg.width = this.maxWidth;
         temImg.height = temImg.width * (img.height / img.width);
       }
-      img.width = temImg.width
-      img.height = temImg.height
-      return temImg
+      img.width = temImg.width;
+      img.height = temImg.height;
+      return temImg;
     },
     //给马赛克容器绑定鼠标事件（包括canvas，brush）
     addMouseEvent () {
-      let target = document.querySelector('.canvas-container')
+      let target = document.querySelector('.canvas-container-mosaic');
       target.addEventListener("mousedown", (e) => {
         target.addEventListener('mousemove', this.handleMouseMove)
-      })
+      });
       document.addEventListener('mouseup', (e) => {
         this.showBrush = false;
-        target.removeEventListener('mousemove', this.handleMouseMove)
-      })
+        target.removeEventListener('mousemove', this.handleMouseMove);
+      });
     },
     //鼠标移动
     handleMouseMove (target) {
-      let container = document.querySelector('.canvas-container')
+      let container = document.querySelector('.canvas-container-mosaic');
       //相对画布位置
-      let x = target.pageX - container.getBoundingClientRect().left
-      let y = target.pageY - container.getBoundingClientRect().top
-      this.setBrushPosition(true, target, target)
+      let x = target.pageX - container.getBoundingClientRect().left;
+      let y = target.pageY - container.getBoundingClientRect().top;
+      this.setBrushPosition(true, target, target);
       // 擦除马赛克
       if (target.shiftKey) {
-        this.eraseTileByPoint(x, y)
-        return
+        this.eraseTileByPoint(x, y);
+        return;
       }
       // 添加马赛克
-      this.drawTileByPoint(x, y)
+      this.drawTileByPoint(x, y);
     },
     //初始化马赛克（像素大小，刷子大小）；将原图分割为每个马赛克格子大小，将其数据保存于tile；
     initMosaic (context) {
-      let { canvas } = context
-      const canvasWidth = canvas.width
-      const canvasHeight = canvas.height
-      const imageData = context.getImageData(0, 0, canvasWidth, canvasHeight).data
+      let { canvas } = context;
+      const canvasWidth = canvas.width;
+      const canvasHeight = canvas.height;
+      const imageData = context.getImageData(0, 0, canvasWidth, canvasHeight).data;
       // 马赛克长宽
-      let tileWidth = this.tileData.tileWidth
-      let tileHeight = this.tileData.tileHeight
+      let tileWidth = this.tileData.tileWidth;
+      let tileHeight = this.tileData.tileHeight;
       // 马赛克总行数
-      const tileRowSize = Math.ceil(canvasHeight / tileHeight)
-      this.tileRowSize = tileRowSize
+      this.tileRowSize = Math.ceil(canvasHeight / tileHeight);
       // 马赛克总列数
-      const tileColumnSize = Math.ceil(canvasWidth / tileHeight)
-      this.tileColumnSize = tileColumnSize
-      // 每个马赛克信息(行数，列数，长度，宽度，图片，原始图片rgba信息)
-      const tiles = []
-      for (let i = 0; i < tileRowSize; i++) {
-        for (let j = 0; j < tileColumnSize; j++) {
+      this.tileColumnSize = Math.ceil(canvasWidth / tileHeight);
+      // 设置马赛克行列数
+      let tiles = this.setTileRanks(this.tileRowSize, this.tileColumnSize, canvasWidth, canvasHeight);
+      // 图片及原始图片中的像素（rgba）数据
+      this.tiles = this.getPixelData(tiles, canvasWidth, imageData);
+    },
+    // 设置马赛克行列数,大小
+    setTileRanks (rowSize, columnSize, canvasWidth, canvasHeight) {
+      const tiles = [];
+      for (let row = 0; row < rowSize; row++) {
+        for (let column = 0; column < columnSize; column++) {
           //位置（行数，列数），大小
           const tile = {
-            tileRow: i,
-            tileColumn: j,
-            pixelWidth: tileWidth,
-            pixelHeight: tileHeight,
+            tileRow: row,
+            tileColumn: column,
+            pixelWidth: this.tileData.tileWidth,
+            pixelHeight: this.tileData.tileHeight,
           }
-          const { tileRow, tileColumn } = tile
+          const { tileRow, tileColumn } = tile;
           //最后一行与最后一列
-          if (j === tileColumnSize - 1) {
-            tile.pixelWidth = canvasWidth - j * tileWidth
+          if (column === columnSize - 1) {
+            tile.pixelWidth = canvasWidth - column * tile.pixelWidth;
           }
-          if (i === tileRowSize - 1) {
-            tile.pixelHeight = canvasHeight - i * tileHeight
+          if (row === rowSize - 1) {
+            tile.pixelHeight = canvasHeight - row * tile.pixelHeight;
           }
-          tiles.push(tile)
+          tiles.push(tile);
         }
       }
-      // 图片及原始图片中的像素（rgba）数据
+      return tiles;
+    },
+    // 获取马赛克对应位置图片的r，g，b，a信息
+    getPixelData (tiles, canvasWidth, imageData) {
       tiles.forEach((tile) => {
         // 图片信息（已添加马赛克）
         const imgTemData = []
         // 原始图片信息
         const initImageData = []
         for (let i = 0, j = tile.pixelHeight; i < j; i++) {
-          const pixelPosition = canvasWidth * tileHeight * tile.tileRow * 4 + tile.tileColumn * tileWidth * 4
+          //  马赛克左上角第一个像素点
+          const pixelPosition = canvasWidth * this.tileData.tileHeight * tile.tileRow * 4 + tile.tileColumn * this.tileData.tileWidth * 4
+          //  同一列的像素点
           const position = pixelPosition + canvasWidth * 4 * i
+
           imgTemData.push(...imageData.slice(position, position + tile.pixelWidth * 4))
           initImageData.push(...this.initImageData.slice(position, position + tile.pixelWidth * 4))
         }
         tile.imgData = imgTemData
         tile.initImageData = initImageData
       })
-      this.tiles = tiles
+      return tiles
     },
-
     //增加马赛克
     drawTileByPoint (x, y) {
       //需要模糊处理的马赛克
@@ -203,6 +208,7 @@ export default {
       let startColumn = Math.max(0, Math.floor(x / tileWidth) - Math.floor(brushSize / 2))
       let endRow = Math.min(this.tileRowSize, startRow + brushSize)
       let endColumn = Math.min(this.tileColumnSize, startColumn + brushSize)
+
       while (startRow < endRow) {
         let column = startColumn
         while (column < endColumn) {
@@ -213,6 +219,7 @@ export default {
       }
       return drawTile
     },
+    //  通过修改图片rbga值来实现马赛克
     drawMosaic (drawTile) {
       let drawTiles = [].concat(drawTile)
       drawTiles.forEach(drawTile => {
@@ -243,11 +250,10 @@ export default {
 
         const x = drawTile.tileColumn * this.tileData.tileWidth
         const y = drawTile.tileRow * this.tileData.tileHeight
-        const w = drawTile.pixelWidth
-        const h = drawTile.pixelHeight
-        this.context.clearRect(x, y, w, h)
-        this.context.fillRect(x, y, w, h)
-        // drawTile.isFilled = true
+        const width = drawTile.pixelWidth
+        const height = drawTile.pixelHeight
+        this.context.clearRect(x, y, width, height)
+        this.context.fillRect(x, y, width, height)
       })
     },
     //清除马赛克
@@ -256,16 +262,16 @@ export default {
       cleanTiles.forEach(cleanTile => {
         const x = cleanTile.tileColumn * this.tileData.tileWidth
         const y = cleanTile.tileRow * this.tileData.tileHeight
-        const w = cleanTile.pixelWidth
-        const h = cleanTile.pixelHeight
+        const width = cleanTile.pixelWidth
+        const height = cleanTile.pixelHeight
 
-        let imageData = this.context.createImageData(w, h)
+        let imageData = this.context.createImageData(width, height)
 
         cleanTile.initImageData.forEach((val, i) => {
           imageData.data[i] = val
         })
 
-        this.context.clearRect(x, y, w, h) // Clear.
+        this.context.clearRect(x, y, width, height) // Clear.
         this.context.putImageData(imageData, x, y) // Draw.
       })
     },
@@ -274,15 +280,15 @@ export default {
       this.eraseMosaic(this.tiles)
     },
     //提交，输出url
-    submitCanvas () {
-      let img = this.canvas.toDataURL()
+    submitCanvas (type, submitImage) {
+      let img = this.canvas.toDataURL(type, submitImage)
       this.$emit("submitImage", img)
     },
     //设置刷子显隐，大小,位置
     setBrushPosition (show, target) {
       this.showBrush = show
       if (target) {
-        let container = document.querySelector('.canvas-container')
+        let container = document.querySelector('.canvas-container-mosaic')
         let brushX = target.pageX - container.getBoundingClientRect().left - this.tileData.brushSize * this.tileData.tileWidth / 2
         let brushY = target.pageY - container.getBoundingClientRect().top - this.tileData.brushSize * this.tileData.tileHeight / 2
         this.brushStyle = {
@@ -302,12 +308,11 @@ export default {
   watch: {
     tileData: {
       handler: function () {
-        if (this.timer) {
-          clearTimeout(this.timer)
-        }
+        clearTimeout(this.timer)
+        this.timer = null
         this.timer = setTimeout(() => {
           this.initMosaic(this.context)
-        }, 300)
+        }, 50)
       },
       deep: true,
     }
@@ -320,10 +325,10 @@ export default {
   width: 100%;
   height: 100%;
 
-  .canvas-container {
+  .canvas-container-mosaic {
     position: relative;
   }
-  .brush {
+  .mosaic-brush {
     position: absolute;
     z-index: 99;
     border: solid red 1px;
